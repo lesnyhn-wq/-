@@ -137,6 +137,7 @@ export function OnlineLobby({ online, onExit }: OnlineLobbyProps) {
               onClick={() => {
                 leaveRoom();
                 setTab('menu');
+                onExit();
               }}
               className="w-full text-sm text-slate-600 hover:text-slate-400 transition-colors"
             >
@@ -183,7 +184,7 @@ export function OnlineLobby({ online, onExit }: OnlineLobbyProps) {
               Присоединиться по коду
             </button>
             <button
-              onClick={() => setTab('menu')}
+              onClick={onExit}
               className="w-full text-sm text-slate-600 hover:text-slate-400 transition-colors"
             >
               ← Назад

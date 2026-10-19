@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useGame } from '@/hooks/useGame';
 import { useQuestions } from '@/hooks/useQuestions';
 import { useOnlineGame } from '@/hooks/useOnlineGame';
@@ -20,10 +20,14 @@ function App() {
   const [view, setView] = useState<View>('home');
 
   const inGame = game.round !== null && game.currentQuestion !== null && !game.roundComplete;
-  const inOnline = view === 'online' && online.session !== null;
+  const inOnlineVoting =
+    view === 'online' &&
+    online.session !== null &&
+    online.room !== null &&
+    online.room.phase !== 'lobby';
 
-  // Online view takes priority once joined
-  if (inOnline) {
+  // Online voting/results view takes priority once the game starts
+  if (inOnlineVoting) {
     return (
       <>
         <OnlineGameScreen online={online} onExit={() => setView('home')} />
@@ -42,7 +46,7 @@ function App() {
   if (view === 'online') {
     return (
       <>
-        <OnlineLobby online={online} />
+        <OnlineLobby online={online} onExit={() => setView('home')} />
         <SettingsPanel
           open={modal === 'settings'}
           onClose={() => setModal('none')}
@@ -54,6 +58,13 @@ function App() {
       </>
     );
   }
+
+  // If we land back on home but an online session lingers, clear it
+  useEffect(() => {
+    if (view === 'home' && online.session) {
+      online.leaveRoom();
+    }
+  }, [view, online.session, online]);
 
   return (
     <>
