@@ -26,6 +26,14 @@ function App() {
     online.room !== null &&
     online.room.phase !== 'lobby';
 
+  // If we land back on home but an online session lingers, clear it.
+  // Must run before any early returns so hook order stays stable.
+  useEffect(() => {
+    if (view === 'home' && online.session) {
+      online.leaveRoom();
+    }
+  }, [view, online.session, online]);
+
   // Online voting/results view takes priority once the game starts
   if (inOnlineVoting) {
     return (
@@ -58,13 +66,6 @@ function App() {
       </>
     );
   }
-
-  // If we land back on home but an online session lingers, clear it
-  useEffect(() => {
-    if (view === 'home' && online.session) {
-      online.leaveRoom();
-    }
-  }, [view, online.session, online]);
 
   return (
     <>
