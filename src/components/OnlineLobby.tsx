@@ -16,7 +16,7 @@ export function OnlineLobby({ online, onExit }: OnlineLobbyProps) {
   const [count, setCount] = useState(10);
   const [copied, setCopied] = useState(false);
 
-  const { session, room, players, error, loading, createRoom, joinRoom, leaveRoom, startGame } = online;
+  const { session, room, players, error, loading, createRoom, joinRoom, leaveRoom, startGame, updateTimer } = online;
 
   const isHost = session?.isHost ?? false;
 
@@ -60,7 +60,7 @@ export function OnlineLobby({ online, onExit }: OnlineLobbyProps) {
           </div>
 
           {/* Settings */}
-          <div className="rounded-2xl border border-white/10 bg-[#13131a] p-5 mb-4">
+          <div className="rounded-2xl border border-white/10 bg-[#13131a] p-5 mb-4 space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-white">Количество вопросов</p>
@@ -83,6 +83,50 @@ export function OnlineLobby({ online, onExit }: OnlineLobbyProps) {
                   <Plus className="w-4 h-4" />
                 </button>
               </div>
+            </div>
+
+            <div className="pt-4 border-t border-white/5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-white">Таймер готовности</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {room.timer_enabled
+                      ? `Отсчёт ${room.timer_seconds}с после готовности всех`
+                      : 'Раунд идёт сразу, когда все готовы'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => isHost && updateTimer(!room.timer_enabled, room.timer_seconds)}
+                  disabled={!isHost}
+                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-30 ${
+                    room.timer_enabled ? 'bg-emerald-500' : 'bg-white/10'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                      room.timer_enabled ? 'translate-x-5' : ''
+                    }`}
+                  />
+                </button>
+              </div>
+              {room.timer_enabled && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400">Длительность таймера</span>
+                    <span className="text-xs text-slate-500 tabular-nums">{room.timer_seconds}с</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={5}
+                    max={30}
+                    step={5}
+                    value={room.timer_seconds}
+                    disabled={!isHost}
+                    onChange={(e) => isHost && updateTimer(true, Number(e.target.value))}
+                    className="w-full mt-2 accent-emerald-500 disabled:opacity-30"
+                  />
+                </div>
+              )}
             </div>
           </div>
 

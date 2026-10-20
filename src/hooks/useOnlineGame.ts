@@ -14,6 +14,8 @@ export interface RoomRow {
   current_index: number;
   phase: Phase;
   ready_deadline: string | null;
+  timer_enabled: boolean;
+  timer_seconds: number;
 }
 
 export interface PlayerRow {
@@ -361,9 +363,11 @@ export function useOnlineGame() {
     await supabase.from('online_question_state').delete().eq('room_id', s.roomId);
     await supabase.from('online_question_state').insert(rows);
 
+    await supabase.from('online_players').update({ ready: false, vote: null }).eq('room_id', s.roomId);
+
     await supabase
       .from('online_rooms')
-      .update({ current_index: 0, phase: 'voting' })
+      .update({ current_index: 0, phase: 'voting', ready_deadline: null })
       .eq('id', s.roomId);
   }, []);
 
@@ -380,53 +384,38 @@ export function useOnlineGame() {
   const setReady = useCallback(async (ready: boolean) => {
     const s = sessionRef.current;
     if (!s) return;
-    await supabase
-      .from('online_players')
-      .update({ ready })
-      .eq('room_id', s.roomId)
-      .eq('player_id', s.playerId);
+    await supabase.rpc('online_mark_ready', {
+      p_room_id: s.roomId,
+      p_player_id: s.playerId,
+      p_ready: ready,
+    });
   }, []);
 
-  // Host-only: check majority ready and advance
-  useEffect(() => {
-    if (!session?.isHost) return;
-    const r = roomRef.current;
-    if (!r || r.phase !== 'voting') return;
-    const ps = playersRef.current;
-    if (ps.length === 0) return;
-
-    const readyCount = ps.filter((p) => p.ready).length;
-    const majority = Math.floor(ps.length / 2) + 1;
-
-    if (readyCount >= majority && !r.ready_deadline) {
-      const deadline = new Date(Date.now() + 5000).toISOString();
-      supabase.from('online_rooms').update({ ready_deadline: deadline }).eq('id', r.id).then(() => {});
-    }
-  }, [players, room, session]);
-
-  // Host-only: when deadline passes, advance to next question or results.
-  // Uses the atomic advance_online_round RPC so duplicate timer fires (caused
-  // by realtime player updates arriving before the room update) are no-ops
-  // on the server — the second call sees ready_deadline already cleared.
+  // Host-only: poll the server when a deadline exists. Server now()
+  // decides whether to advance, so browser clock skew can only cause a
+  // harmless not-ready retry — never a freeze. Polling continues until the
+  // room phase/deadline changes (observed via realtime setRoom).
   useEffect(() => {
     if (!session?.isHost) return;
     const r = roomRef.current;
     if (!r || r.phase !== 'voting' || !r.ready_deadline) return;
 
-    const ms = new Date(r.ready_deadline).getTime() - Date.now();
-    const delay = ms > 0 ? ms : 0;
-    let cancelled = false;
+    const interval = setInterval(async () => {
+      await supabase.rpc('advance_online_round', { p_room_id: r.id });
+    }, 1000);
 
-    const timer = setTimeout(async () => {
-      if (cancelled) return;
-      await supabase.rpc('advance_online_round', { p_room_id: roomRef.current?.id });
-    }, Math.max(delay, 100));
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
+    return () => clearInterval(interval);
   }, [room, session]);
+
+  const updateTimer = useCallback(async (enabled: boolean, seconds: number) => {
+    const s = sessionRef.current;
+    const r = roomRef.current;
+    if (!s || !r || !s.isHost) return;
+    await supabase
+      .from('online_rooms')
+      .update({ timer_enabled: enabled, timer_seconds: seconds })
+      .eq('id', s.roomId);
+  }, []);
 
   const playAgain = useCallback(async () => {
     const s = sessionRef.current;
@@ -434,12 +423,7 @@ export function useOnlineGame() {
     if (!s || !r || !s.isHost) return;
     await supabase.from('online_question_state').delete().eq('room_id', s.roomId);
     await supabase.from('online_votes').delete().eq('room_id', s.roomId);
-    const ps = playersRef.current;
-    await Promise.all(
-      ps.map((p) =>
-        supabase.from('online_players').update({ ready: false, vote: null }).eq('id', p.id)
-      )
-    );
+    await supabase.from('online_players').update({ ready: false, vote: null }).eq('room_id', s.roomId);
     await supabase
       .from('online_rooms')
       .update({ current_index: 0, phase: 'lobby', ready_deadline: null })
@@ -462,6 +446,7 @@ export function useOnlineGame() {
     startGame,
     castVote,
     setReady,
+    updateTimer,
     playAgain,
   };
 }

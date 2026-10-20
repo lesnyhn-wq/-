@@ -223,11 +223,12 @@ export function OnlineGameScreen({ online, onExit }: OnlineGameScreenProps) {
           }`}
         >
           <Check className="w-5 h-5" />
-          {myReady ? 'Готово! Ждём остальных' : `Я готов (${readyCount}/${majority} нужно)`}
+          {myReady ? 'Готово! Ждём остальных' : `Я готов (${readyCount}/${players.length})`}
         </button>
 
         <p className="text-xs text-slate-600 text-center tabular-nums">
-          Проголосовало: {votedCount} / {players.length} · Готовы: {readyCount} / {majority}
+          Проголосовало: {votedCount} / {players.length} · Готовы: {readyCount} / {players.length}
+          {!room.timer_enabled && ' · без таймера'}
         </p>
       </div>
     </div>
