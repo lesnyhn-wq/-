@@ -382,7 +382,7 @@ export function useOnlineGame() {
     if (!s) return;
     await supabase
       .from('online_players')
-      .update({ ready, vote: null })
+      .update({ ready })
       .eq('room_id', s.roomId)
       .eq('player_id', s.playerId);
   }, []);
@@ -404,7 +404,10 @@ export function useOnlineGame() {
     }
   }, [players, room, session]);
 
-  // Host-only: when deadline passes, advance to next question or results
+  // Host-only: when deadline passes, advance to next question or results.
+  // Uses the atomic advance_online_round RPC so duplicate timer fires (caused
+  // by realtime player updates arriving before the room update) are no-ops
+  // on the server — the second call sees ready_deadline already cleared.
   useEffect(() => {
     if (!session?.isHost) return;
     const r = roomRef.current;
@@ -412,56 +415,18 @@ export function useOnlineGame() {
 
     const ms = new Date(r.ready_deadline).getTime() - Date.now();
     const delay = ms > 0 ? ms : 0;
+    let cancelled = false;
 
     const timer = setTimeout(async () => {
-      const currentRoom = roomRef.current;
-      if (!currentRoom) return;
-      const ps = playersRef.current;
-      const slotIndex = currentRoom.current_index;
-
-      // Snapshot current votes into online_votes history
-      const votedPlayers = ps.filter((p) => p.vote === 'norm' || p.vote === 'strem');
-      if (votedPlayers.length > 0) {
-        const rows = votedPlayers.map((p) => ({
-          room_id: currentRoom.id,
-          slot_index: slotIndex,
-          player_id: p.player_id,
-          player_name: p.name,
-          vote: p.vote as Vote,
-        }));
-        // upsert (replace any prior snapshot for this slot)
-        await supabase.from('online_votes').delete().eq('room_id', currentRoom.id).eq('slot_index', slotIndex);
-        await supabase.from('online_votes').insert(rows);
-      }
-
-      // reset all players' ready + vote
-      await Promise.all(
-        ps.map((p) =>
-          supabase
-            .from('online_players')
-            .update({ ready: false, vote: null })
-            .eq('id', p.id)
-        )
-      );
-
-      const nextIndex = currentRoom.current_index + 1;
-      const total = questionStates.length || currentRoom.question_count;
-
-      if (nextIndex >= total) {
-        await supabase
-          .from('online_rooms')
-          .update({ phase: 'results', ready_deadline: null })
-          .eq('id', currentRoom.id);
-      } else {
-        await supabase
-          .from('online_rooms')
-          .update({ current_index: nextIndex, ready_deadline: null })
-          .eq('id', currentRoom.id);
-      }
+      if (cancelled) return;
+      await supabase.rpc('advance_online_round', { p_room_id: roomRef.current?.id });
     }, Math.max(delay, 100));
 
-    return () => clearTimeout(timer);
-  }, [room, players, questionStates.length, session]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [room, session]);
 
   const playAgain = useCallback(async () => {
     const s = sessionRef.current;
